@@ -1,0 +1,77 @@
+version: '3.8'
+
+# =============================================
+# 아들과딸 주간보호센터 통합 시스템
+# Docker Compose 설정
+# =============================================
+# 
+# ⚠️ 중요: init.sql이 실행되지 않는 경우
+# - Docker 볼륨이 이미 존재하면 init.sql은 무시됩니다
+# - 해결: docker-compose down -v 로 볼륨 삭제 후 재시작
+#
+# ⚠️ 포트 충돌이 발생하는 경우
+# - 로컬에 PostgreSQL이 설치되어 있으면 5432 포트 충돌
+# - 해결 1: 로컬 PostgreSQL 서비스 중지
+#   Windows: net stop postgresql-x64-17
+#   Mac/Linux: sudo systemctl stop postgresql
+# - 해결 2: 아래 ports를 "5433:5432"로 변경
+#
+# =============================================
+
+services:
+  # PostgreSQL 데이터베이스
+  postgres:
+    image: postgres:15-alpine
+    container_name: snd-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: snd_user
+      POSTGRES_PASSWORD: snd_password_2024
+      POSTGRES_DB: snd_db
+      TZ: Asia/Seoul
+    ports:
+      # 로컬 PostgreSQL과 충돌 시 "5433:5432"로 변경
+      # 변경 시 backend/.env의 DB_PORT도 5433으로 수정 필요
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # init.sql은 볼륨이 비어있을 때만 실행됨
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U snd_user -d snd_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis (캐시 + 큐)
+  redis:
+    image: redis:7-alpine
+    container_name: snd-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # pgAdmin (개발용 DB 관리 도구) - 선택사항
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: snd-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@snd.com
+      PGADMIN_DEFAULT_PASSWORD: admin1234
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+  redis_data:
